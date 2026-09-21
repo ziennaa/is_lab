@@ -1724,3 +1724,58 @@ with open("report.txt", "w") as file:
     file.write("patient name: jgjgj \ndiagnosis: cold")
 with open("report.txt", "rb") as file:
     report = file.read()
+
+# creation of a file
+with open("medical.txt", "w") as file:
+    file.write("patient : \n diagnosis : ")
+
+# read a text file as bytes
+
+with open("medical.txt", "rb") as file:
+    data = file.read
+
+
+# encrypt the data
+encrypted, iv = aes_cbc_encrypt(data, aes_key)
+
+# store enncrypted data
+
+with open("encrypted_record.bin", "wb") as file:
+    file.write(iv + encrypted)
+
+# rsa encrypt aes key
+
+encrypted_key = rsa_encrypt_bytes(aes_key, rsa_public)
+
+# store encrypted aes key
+
+with open("encrypted_aes_key.bin", "wb") as file:
+    file.write(encrypted_key)
+
+
+# later if decrypting
+
+# read encrypted file
+
+with open("encrypted_record.bin", "rb") as file:
+    encrypted = file.read()
+
+# read encrypted aes key
+
+with open("encrypted_aes_key.bin", "rb") as file:
+    encrypted_key = file.read()
+
+aes_key = rsa_decrypt_bytes(encrypted_key, rdsa_private_key)
+dececrypted = aes_cbc_decrypt(encrypted, aes_key, iv)
+
+
+# store recovered plaintext 
+
+with open("decrypted_record.txt", "wb") as file:
+    file.write(dececrypted)
+
+
+with open("encrypted_record.bin", "rb") as file:
+    encrypted = file.read()
+iv = encrypted[:16]
+encryp = encrypted[::16]
