@@ -1,32 +1,41 @@
-
 """
-IS LAB EXAM HELPER v2
----------------------
-Generic question analyzer for Information Security lab exams.
+IS LAB EXAM HELPER v3 - UNIVERSAL SCENARIO DECOMPOSER
+------------------------------------------------------
+Paste a long Information Security lab/midsem question, then type END.
 
-This version DOES NOT depend on exact scenario names such as:
-SecureVault, HealthSecure, MediSecure, etc.
+The goal is NOT to magically solve every possible question.
+The goal is to turn an overwhelming question into:
+    1) algorithms involved
+    2) validations/conditions
+    3) exact implementation order
+    4) toolkit functions to copy
+    5) glue code patterns (dictionary/list/menu/files)
 
-It detects requirements from meaning-like keyword groups:
-- AES / DES / RSA / ElGamal / SHA
-- encryption / decryption
-- hashing / integrity
-- signatures / authenticity
-- public/private key usage
-- file handling
-- role restrictions
-- tampering tests
-- timestamps
-- menu-driven / RBAC
+Covers the common patterns from Labs 1-6:
+- Classical ciphers: Caesar/Additive, Multiplicative, Affine, Vigenere,
+  Autokey, Playfair, Hill
+- AES / DES / 3DES
+- RSA / ElGamal / ECC / Rabin
+- Diffie-Hellman
+- SHA-256 / SHA-1 / MD5
+- RSA / ElGamal / Schnorr signatures
+- File handling and hybrid encryption
+- Hash/integrity and tampering tests
+- Role-based/menu-driven systems
+- Multiple records using dictionaries + lists
+- Client/server/socket questions
+- Performance/timing/collision experiments
 
-Paste any similar exam question and type END on a new line.
+IMPORTANT:
+This helper assumes you already have your master crypto toolkit functions.
+It tells you WHAT to copy and HOW to join the pieces.
 """
 
 import re
 
 
 # ============================================================
-# TEXT HELPERS
+# BASIC HELPERS
 # ============================================================
 
 def normalize(text):
@@ -38,504 +47,625 @@ def contains_any(text, phrases):
     return any(p.lower() in t for p in phrases)
 
 
-def contains_all(text, phrases):
-    t = normalize(text)
-    return all(p.lower() in t for p in phrases)
+def title(text):
+    print("\n" + "=" * 78)
+    print(text)
+    print("=" * 78)
 
 
-def title(s):
-    print("\n" + "=" * 72)
-    print(s)
-    print("=" * 72)
+def yesno(value):
+    return "YES" if value else "NO"
 
 
 # ============================================================
-# DETECT ALGORITHMS
+# ALGORITHM DETECTION
 # ============================================================
 
-def detect_algorithms(q):
-    ql = normalize(q)
-    found = []
+def detect_algorithms(question):
+    q = normalize(question)
 
     patterns = {
-        "AES": [
-            r"\baes\b", r"advanced encryption standard"
-        ],
-        "DES": [
-            r"\bdes\b", r"data encryption standard"
-        ],
-        "RSA": [
-            r"\brsa\b"
-        ],
-        "ElGamal": [
-            r"elgamal", r"el gamal"
-        ],
-        "Schnorr": [
-            r"schnorr"
-        ],
-        "Diffie-Hellman": [
-            r"diffie[- ]hellman", r"\bdh\b"
-        ],
-        "SHA-256": [
-            r"sha[- ]?256", r"secure hash algorithm.*256"
-        ],
-        "SHA-1": [
-            r"sha[- ]?1\b"
-        ],
-        "MD5": [
-            r"\bmd5\b"
-        ],
+        "AES": [r"\baes\b", r"advanced encryption standard"],
+        "DES": [r"(?<!3)\bdes\b", r"data encryption standard"],
+        "3DES": [r"\b3des\b", r"triple des", r"des3"],
+        "RSA": [r"\brsa\b"],
+        "ElGamal": [r"el\s*gamal", r"elgamal"],
+        "ECC": [r"\becc\b", r"elliptic curve"],
+        "Rabin": [r"\brabin\b"],
+        "Diffie-Hellman": [r"diffie\s*[-–]?\s*hellman", r"\bdh\b"],
+        "Affine": [r"\baffine\b"],
+        "Additive/Caesar": [r"\badditive\b", r"\bcaesar\b", r"shift cipher"],
+        "Multiplicative": [r"\bmultiplicative\s+(?:cipher|encryption|decryption)\b"],
+        "Vigenere": [r"vigen[eè]re", r"vigenere"],
+        "Autokey": [r"auto\s*key", r"autokey"],
+        "Playfair": [r"playfair"],
+        "Hill": [r"\bhill cipher\b", r"\bhill\b"],
+        "Schnorr": [r"schnorr"],
+        "SHA-256": [r"sha\s*[-]?\s*256", r"sha256"],
+        "SHA-1": [r"sha\s*[-]?\s*1\b", r"sha1\b"],
+        "MD5": [r"\bmd5\b"],
     }
 
-    for algo, pats in patterns.items():
-        if any(re.search(p, ql, re.I) for p in pats):
-            found.append(algo)
+    found = []
+    for name, pats in patterns.items():
+        if any(re.search(p, q, re.I) for p in pats):
+            found.append(name)
 
     return found
 
 
 # ============================================================
-# DETECT MODES / CRYPTO DETAILS
+# ROLE / ACTOR DETECTION
 # ============================================================
 
-def detect_modes(q):
-    ql = normalize(q)
-    details = []
+def detect_roles(question):
+    """Find actual actors/roles without treating words like 'patient data' as a role."""
 
-    if re.search(r"\bcbc\b", ql):
-        details.append("CBC mode")
+    known = [
+        "Compliance Officer", "Hospital Server", "Administrator", "Doctor",
+        "Nurse", "Admin", "Patient", "Auditor", "Sender", "Receiver",
+        "Faculty", "Student", "Manager", "Finance", "Employee", "Client",
+        "Lawyer", "Server", "HR", "Customer", "Alice", "Bob"
+    ]
 
-    if re.search(r"\becb\b", ql):
-        details.append("ECB mode")
+    found = []
 
-    if re.search(r"\bgcm\b", ql):
-        details.append("GCM mode")
+    def add_role(role):
+        for known_role in known:
+            if role.lower().strip() == known_role.lower():
+                if known_role not in found:
+                    found.append(known_role)
+                return
 
-    if re.search(r"\bctr\b", ql):
-        details.append("CTR mode")
+    # 1) Explicit headings: Doctor:, NURSE, Sender Side, etc.
+    for raw in question.splitlines():
+        line = raw.strip().strip("*-# ")
+        for role in known:
+            if re.fullmatch(re.escape(role) + r"(?:\s+side)?\s*: ?", line, re.I) or \
+               re.fullmatch(re.escape(role) + r"(?:\s+side)?", line, re.I):
+                add_role(role)
 
-    if contains_any(ql, ["initialization vector", " iv ", "generate iv", "use iv"]):
-        details.append("IV required")
+    # 2) Natural phrases: "The Doctor should...", "Receiver must..."
+    for role in known:
+        if re.search(r"\b(?:the\s+)?" + re.escape(role) + r"\s+(?:should|must|can|is allowed|will|computes|enters|receives|sends)\b", question, re.I):
+            add_role(role)
 
-    if contains_any(ql, ["aes-128", "128-bit aes", "128 bit aes"]):
-        details.append("AES-128")
+    # 3) "consists of a Sender and a Receiver"
+    for role in known:
+        if re.search(r"\bconsists?\s+of[^.\n]{0,100}\b" + re.escape(role) + r"\b", question, re.I):
+            add_role(role)
 
-    if contains_any(ql, ["2048-bit rsa", "rsa-2048", "2048 bit rsa"]):
-        details.append("RSA-2048")
+    # 4) Explicit role list such as "roles: Doctor, Nurse, Admin".
+    for m in re.finditer(r"\broles?\b\s*(?:are|:|=)?\s*([^\n.]{1,120})", question, re.I):
+        chunk = m.group(1)
+        for role in known:
+            if re.search(r"\b" + re.escape(role) + r"\b", chunk, re.I):
+                add_role(role)
 
-    return details
-
-
-# ============================================================
-# DETECT TASK INTENTS
-# ============================================================
-
-def detect_intents(q):
-    ql = normalize(q)
-
-    intents = {
-        "encrypt_plaintext": contains_any(ql, [
-            "encrypt the record", "encrypt patient", "encrypt data",
-            "encrypt the file", "encrypt file content",
-            "encrypt the message", "confidentiality"
-        ]),
-
-        "decrypt_plaintext": contains_any(ql, [
-            "decrypt the record", "decrypt patient", "decrypt data",
-            "decrypt the file", "decrypt file content",
-            "recover plaintext", "recovered plaintext",
-            "original file content", "show decrypted"
-        ]),
-
-        "hash_data": contains_any(ql, [
-            "hash", "sha-256", "sha256",
-            "integrity", "digest"
-        ]),
-
-        "sign": contains_any(ql, [
-            "digitally sign", "digital signature",
-            "generate signature", "sign the hash",
-            "sign hash", "authentication"
-        ]),
-
-        "verify_signature": contains_any(ql, [
-            "verify signature", "signature verification",
-            "verify the digital signature",
-            "verify authenticity", "authenticity verification"
-        ]),
-
-        "verify_hash": contains_any(ql, [
-            "recompute", "recalculate", "compare hash",
-            "verify integrity", "integrity verification",
-            "check integrity", "hash verification"
-        ]),
-
-        "file_input": contains_any(ql, [
-            "read from a file", "read a file", ".txt file",
-            "create a file", "file content"
-        ]),
-
-        "file_storage": contains_any(ql, [
-            "store", "save", "write to file",
-            "another file", "stored record", "secure storage"
-        ]),
-
-        "timestamp": contains_any(ql, [
-            "timestamp", "date and time", "current time"
-        ]),
-
-        "rbac": contains_any(ql, [
-            "role-based", "role based", "rbac",
-            "three roles", "role", "authorized operations"
-        ]),
-
-        "menu": contains_any(ql, [
-            "menu-driven", "menu driven", "menu based"
-        ]),
-
-        "tamper_test": contains_any(ql, [
-            "tamper", "tampering", "modify one character",
-            "modify one byte", "change one character",
-            "integrity failed", "alter ciphertext"
-        ]),
-
-        "encrypt_key": contains_any(ql, [
-            "encrypt the aes key", "encrypt aes key",
-            "protect the aes key", "encrypted key"
-        ]),
-
-        "authorization_code": contains_any(ql, [
-            "authorization code", "authorisation code",
-            "access code"
-        ]),
-
-        "audit_report": contains_any(ql, [
-            "audit report", "compliance report",
-            "verification report", "generate report"
-        ]),
-    }
-
-    return intents
+    return found
 
 
 # ============================================================
-# ROLE EXTRACTION
+# CONSTANT / VALUE EXTRACTION
 # ============================================================
 
-KNOWN_NON_ROLES = {
-    "task", "requirements", "requirement", "application", "system",
-    "algorithms", "algorithm", "output", "input", "steps",
-    "sender side", "receiver side", "specifications", "specification"
-}
+def extract_values(question):
+    q = question
+    values = {}
 
+    def first_int(pattern):
+        m = re.search(pattern, q, re.I)
+        return int(m.group(1)) if m else None
 
-def extract_role_sections(question):
-    """
-    Finds headings such as:
-        Doctor:
-        Nurse:
-        Admin:
-        CLIENT:
-        Compliance Officer:
+    values["k2"] = first_int(r"\bk2\s*=\s*(-?\d+)")
+    values["k1"] = first_int(r"\bk1\s*=\s*(-?\d+)")
+    values["p"] = first_int(r"(?:^|[^A-Za-z])p\s*=\s*(\d+)")
+    values["g"] = first_int(r"(?:^|[^A-Za-z])g\s*=\s*(\d+)")
 
-    Also accepts lines in ALL CAPS without colon.
-    """
-    lines = question.splitlines()
-    sections = {}
-    current = None
+    aes_bits = first_int(r"aes\s*[- ]?\s*(128|192|256)")
+    if aes_bits:
+        values["aes_bits"] = aes_bits
 
-    for raw in lines:
-        line = raw.strip()
+    rsa_bits = first_int(r"rsa\s*[- ]?\s*(1024|2048|3072|4096)")
+    if rsa_bits:
+        values["rsa_bits"] = rsa_bits
 
-        if not line:
-            continue
+    files = re.findall(r"[A-Za-z0-9_\- ]+\.(?:txt|bin|dat|enc|csv|json)", q, re.I)
+    cleaned_files = []
+    for f in files:
+        f = f.strip(" `\"'.,:;()[]")
+        if f and f not in cleaned_files:
+            cleaned_files.append(f)
+    values["files"] = cleaned_files
 
-        # Heading ending in colon, reasonably short
-        m = re.match(r"^([A-Za-z][A-Za-z /_-]{1,35}):\s*$", line)
-
-        # Or an ALL-CAPS heading
-        all_caps_heading = (
-            len(line) <= 35
-            and line.upper() == line
-            and re.search(r"[A-Z]", line)
-            and not re.search(r"[.!?]", line)
-        )
-
-        candidate = None
-
-        if m:
-            candidate = m.group(1).strip()
-        elif all_caps_heading:
-            candidate = line.strip()
-
-        if candidate:
-            low = candidate.lower()
-
-            # Avoid treating algorithm names or common labels as roles
-            algorithm_words = {
-                "aes", "des", "rsa", "elgamal", "sha", "sha-256",
-                "md5", "cbc", "task", "output", "input"
-            }
-
-            if (
-                low not in KNOWN_NON_ROLES
-                and low not in algorithm_words
-                and not low.startswith("detected")
-            ):
-                current = candidate.title()
-                sections[current] = []
-                continue
-
-        if current:
-            sections[current].append(line)
-
-    return {k: "\n".join(v) for k, v in sections.items() if v}
+    return values
 
 
 # ============================================================
-# ROLE PERMISSION ANALYSIS
+# REQUIREMENT / FEATURE DETECTION
 # ============================================================
 
-def analyze_role(role_text):
-    t = normalize(role_text)
+def detect_features(question, algorithms):
+    q = normalize(question)
 
-    abilities = []
-    restrictions = []
+    f = {}
 
-    if contains_any(t, ["enter", "provide", "create", "upload", "read a medical record"]):
-        abilities.append("provide/create input data")
+    f["encrypt"] = contains_any(q, ["encrypt", "encryption", "confidentiality"])
+    f["decrypt"] = contains_any(q, ["decrypt", "decryption", "recover plaintext", "original plaintext"])
 
-    if contains_any(t, ["encrypt", "encryption"]):
-        abilities.append("encrypt data")
+    f["hash"] = contains_any(q, ["hash", "sha-256", "sha256", "sha-1", "md5", "integrity"])
+    f["verify_hash"] = contains_any(q, [
+        "recompute", "recalculate", "compare it with", "compare with the stored hash",
+        "verify integrity", "integrity verification", "check integrity"
+    ])
 
-    if contains_any(t, ["decrypt", "decryption", "recover plaintext"]):
-        abilities.append("decrypt data")
+    f["sign"] = contains_any(q, ["digitally sign", "digital signature", "sign the hash", "sign the encrypted", "signature"])
+    f["verify_signature"] = (
+        contains_any(q, ["verify signature", "verify the signature", "signature verification", "verify authenticity", "valid or invalid"])
+        or bool(re.search(r"verify\w*[^.\n]{0,40}signature", q, re.I))
+    )
 
-    if contains_any(t, ["hash", "sha-256", "integrity"]):
-        abilities.append("compute/verify hash")
+    f["file_input"] = contains_any(q, [
+        "read a file", "read from a", "create a file", ".txt file", "file content", "file contents"
+    ])
+    f["file_output"] = contains_any(q, [
+        "store in another file", "write", "save", "another file", "recovered file", "decrypted file"
+    ])
+    f["binary_file"] = contains_any(q, [".bin", "binary file", "encrypted file"])
 
-    if contains_any(t, ["sign", "digital signature"]):
-        abilities.append("create/verify signature")
+    f["timestamp"] = contains_any(q, ["timestamp", "date and time", "current time"])
+    f["store"] = contains_any(q, ["store", "save", "record", "records", "secure storage"])
+    f["multiple_records"] = contains_any(q, ["records", "previously stored", "available records", "record id", "multiple records"])
 
-    if contains_any(t, ["view", "display", "access stored"]):
-        abilities.append("view permitted records/metadata")
+    f["rbac"] = contains_any(q, ["role-based", "role based", "rbac", "roles", "authorized operations", "access restrictions"])
+    f["menu"] = contains_any(q, ["menu-driven", "menu driven", "menu based"])
 
-    if contains_any(t, ["store", "save", "write"]):
-        abilities.append("store records/results")
+    f["encrypt_key"] = contains_any(q, [
+        "encrypt the aes key", "encrypt aes key", "encrypted aes key",
+        "protect the aes key", "encrypt the des key", "encrypted key"
+    ])
 
-    if contains_any(t, ["audit", "compliance report", "verification report"]):
-        abilities.append("audit/generate report")
+    f["tamper"] = contains_any(q, [
+        "tamper", "tampering", "modify one byte", "modify one character",
+        "alter ciphertext", "change one byte", "integrity failed"
+    ])
 
-    if contains_any(t, [
-        "must not decrypt", "cannot decrypt", "not allowed to decrypt",
-        "must not be allowed to decrypt"
-    ]):
-        restrictions.append("MUST NOT decrypt plaintext")
+    f["performance"] = contains_any(q, [
+        "performance", "computation time", "execution time", "encryption time",
+        "decryption time", "key generation time", "measure time", "benchmark",
+        "1 mb", "10 mb", "1mb", "10mb"
+    ])
 
-    if contains_any(t, [
-        "must not view plaintext", "cannot view plaintext",
-        "must not access plaintext", "must not access the plaintext",
-        "must not be allowed to view the plaintext"
-    ]):
-        restrictions.append("MUST NOT view plaintext")
+    f["collision"] = contains_any(q, ["collision", "collision resistance", "collision detection"])
+    f["client_server"] = contains_any(q, ["client-server", "client server", "socket", "server side", "client side"])
 
-    if contains_any(t, [
-        "must not have access to the private key",
-        "cannot access private key",
-        "must not have access to doctor's private key",
-        "must not have access to the doctor's private key"
-    ]):
-        restrictions.append("MUST NOT access private key")
+    # FieldTrack / validation style
+    f["preprocess_upper_alpha"] = contains_any(q, [
+        "convert the plaintext to uppercase", "convert plaintext to uppercase",
+        "retain only alphabetic", "only alphabetic characters", "discarded"
+    ])
 
-    if contains_any(t, [
-        "only if", "only when", "if verification successful",
-        "if verification is successful", "if both pass",
-        "if both are valid"
-    ]):
-        restrictions.append("Decrypt/display plaintext ONLY after successful verification")
+    f["dh_shared"] = "Diffie-Hellman" in algorithms or contains_any(q, ["shared secret", "shared key using diffie"])
+    f["compare_shared"] = contains_any(q, [
+        "shared secrets are equal", "shared secret is equal", "shared secrets do not match",
+        "verify that both shared", "computed shared secret is equal"
+    ])
 
-    return abilities, restrictions
+    f["k_mod_validation"] = bool(re.search(r"\bk\s*(?:mod|%)\s*26\s*==\s*k2", q, re.I)) or contains_any(q, ["k mod 26 == k2"])
+    f["gcd_validation"] = bool(re.search(r"gcd\s*\(\s*k1\s*,\s*26\s*\)\s*==?\s*1", q, re.I)) or contains_any(q, ["gcd(k1, 26)", "gcd(k1,26)"])
+    f["mod_inverse"] = contains_any(q, ["multiplicative inverse", "modular inverse", "inverse of k1"])
+
+    f["uppercase_output"] = f["preprocess_upper_alpha"]
+
+    return f
 
 
 # ============================================================
-# CRYPTO FUNCTION SUGGESTIONS
+# TOOLKIT FUNCTION MAPPING
 # ============================================================
 
-def suggest_functions(algorithms, intents, modes):
+def toolkit_functions(algorithms, f):
     funcs = []
 
+    def add(*items):
+        for item in items:
+            if item not in funcs:
+                funcs.append(item)
+
     if "AES" in algorithms:
-        funcs += [
-            "aes_encrypt(data, key, iv)",
-            "aes_decrypt(ciphertext, key, iv)"
-        ]
+        add("aes_cbc_encrypt(plaintext, key, iv=None)",
+            "aes_cbc_decrypt(ciphertext, key, iv)",
+            "get_random_bytes(16)   # AES-128")
 
     if "DES" in algorithms:
-        funcs += [
-            "des_encrypt(data, key, iv)",
-            "des_decrypt(ciphertext, key, iv)"
-        ]
+        add("des_cbc_encrypt(...) / des_cbc_decrypt(...) from toolkit")
+
+    if "3DES" in algorithms:
+        add("des3_encrypt(...) / des3_decrypt(...) from toolkit")
 
     if "RSA" in algorithms:
-        if intents["encrypt_plaintext"] or intents["encrypt_key"]:
-            funcs += [
-                "rsa_encrypt(data, public_key)",
-                "rsa_decrypt(ciphertext, private_key)"
-            ]
-
-        if intents["sign"] or intents["verify_signature"]:
-            funcs += [
-                "rsa_sign(hash_bytes, private_key)",
-                "rsa_verify(hash_bytes, signature, public_key)"
-            ]
-
-        funcs.append("generate_rsa_keys()")
+        add("rsa_generate(2048)")
+        if f["encrypt_key"] or f["encrypt"]:
+            add("rsa_encrypt_bytes(data, public_key)",
+                "rsa_decrypt_bytes(ciphertext, private_key)")
+        if f["sign"] or f["verify_signature"]:
+            add("rsa_sign_sha256(data, private_key)",
+                "rsa_verify_sha256(data, signature, public_key)")
 
     if "ElGamal" in algorithms:
-        if intents["authorization_code"] or intents["encrypt_plaintext"]:
-            funcs += [
-                "elgamal_encrypt(message, public_key)",
-                "elgamal_decrypt(ciphertext, private_key)"
-            ]
+        add("elgamal_generate(...) / elgamal_encrypt_text(...) / elgamal_decrypt_text(...)")
+        if f["sign"] or f["verify_signature"]:
+            add("ElGamal sign/verify functions from toolkit")
 
-        if intents["sign"] or intents["verify_signature"]:
-            funcs += [
-                "elgamal_sign(hash_value, private_key)",
-                "elgamal_verify(hash_value, signature, public_key)"
-            ]
+    if "ECC" in algorithms:
+        add("ECC / hybrid helper functions from toolkit")
 
-        funcs.append("elgamal_keygen()")
+    if "Diffie-Hellman" in algorithms or f["dh_shared"]:
+        add("dh_generate_public(p, g, private=None)",
+            "dh_shared_secret(other_public, private, p)")
 
-    if any(a in algorithms for a in ["SHA-256", "SHA-1", "MD5"]) or intents["hash_data"]:
-        funcs.append("hash_data(data)")
+    if "Affine" in algorithms:
+        add("clean_letters(text)",
+            "affine_encrypt(text, k1, k2)",
+            "affine_decrypt(ciphertext, k1, k2)",
+            "math.gcd(k1, 26)",
+            "pow(k1, -1, 26)")
 
-    if intents["file_input"]:
-        funcs.append("read_file(filename)")
+    if "Additive/Caesar" in algorithms:
+        add("additive_encrypt(...) / additive_decrypt(...)")
 
-    if intents["file_storage"]:
-        funcs += [
-            "save_record(record)",
-            "load_records()"
-        ]
+    if "Multiplicative" in algorithms:
+        add("multiplicative_encrypt(...) / multiplicative_decrypt(...)")
 
-    if intents["tamper_test"]:
-        funcs.append("tamper_ciphertext(ciphertext)")
+    if "Vigenere" in algorithms:
+        add("vigenere_encrypt(...) / vigenere_decrypt(...)")
 
-    # Remove duplicates preserving order
-    out = []
-    for f in funcs:
-        if f not in out:
-            out.append(f)
+    if "Autokey" in algorithms:
+        add("autokey_encrypt(...) / autokey_decrypt(...)")
 
-    return out
+    if "Playfair" in algorithms:
+        add("playfair helpers from toolkit")
+
+    if "Hill" in algorithms:
+        add("hill cipher helpers from toolkit")
+
+    if "Schnorr" in algorithms:
+        add("Schnorr sign/verify helpers from toolkit")
+
+    if "Rabin" in algorithms:
+        add("rabin_generate_small(...) / rabin_encrypt(...) / rabin_decrypt_roots(...)")
+
+    if f["hash"]:
+        add("sha256_hex(data)   # if SHA-256 is required")
+
+    if f["timestamp"]:
+        add("timestamp_now()")
+
+    return funcs
 
 
 # ============================================================
-# BUILD GENERIC FLOW
+# SPECIALIZED IMPLEMENTATION PLANS
 # ============================================================
 
-def build_flow(algorithms, intents, modes):
+def print_fieldtrack_plan(values):
+    k2 = values.get("k2")
+    if k2 is None:
+        k2 = 2
+
+    title("SPECIAL PLAN: DIFFIE-HELLMAN + AFFINE")
+
+    print("This is NOT an AES/RSA-style question. Treat it as 2 joined blocks:\n")
+    print("BLOCK A: Diffie-Hellman produces the shared secret K")
+    print("BLOCK B: K is validated, then Affine does message encryption/decryption\n")
+
+    steps = [
+        "Read the given DH parameters p and g (and private values if the question provides them).",
+        "Generate Sender public value and Receiver public value.",
+        "Sender computes its shared secret using Receiver public + Sender private.",
+        "Receiver computes its shared secret using Sender public + Receiver private.",
+        "Compare the two shared secrets BEFORE any encryption.",
+        "Process plaintext: uppercase + keep A-Z only.",
+        f"Set k2 = {k2}.",
+        f"Set K = Sender shared secret and check K % 26 == {k2}.",
+        "Only after that, ask for k1.",
+        "Check math.gcd(k1, 26) == 1.",
+        "Only if k1 is valid, compute pow(k1, -1, 26).",
+        "Encrypt processed plaintext with affine_encrypt(plaintext, k1, k2).",
+        "Receiver sets K = Receiver shared secret and repeats the required validations.",
+        "Decrypt the CIPHERTEXT with affine_decrypt(ciphertext, k1, k2).",
+        "Display the recovered processed plaintext."
+    ]
+
+    for i, step in enumerate(steps, 1):
+        print(f"{i}. {step}")
+
+    print("\nMOST COMMON MISTAKES:")
+    print("- Using different p values during DH public-value generation and shared-secret calculation.")
+    print("- Asking for k1 before K % 26 == k2 passes.")
+    print("- Using an invalid k1 after gcd(k1,26) != 1.")
+    print("- Decrypting plaintext instead of decrypting the ciphertext.")
+    print("- Generating/asking for a different k1 on Receiver side.")
+
+
+
+def print_hybrid_plan(algorithms, f):
+    if not ("AES" in algorithms and "RSA" in algorithms and f["encrypt_key"]):
+        return
+
+    title("SPECIAL PLAN: HYBRID AES + RSA")
+    print("Think of it as:\n")
+    print("actual data/file --AES--> ciphertext")
+    print("AES key          --RSA public of receiver--> encrypted AES key")
+    print("\nReceiver does the reverse:")
+    print("encrypted AES key --RSA private of receiver--> recovered AES key")
+    print("ciphertext + recovered AES key + IV --AES--> plaintext")
+
+    if f["hash"]:
+        print("\nIntegrity: hash the CIPHERTEXT, store hash, recompute later.")
+    if f["sign"]:
+        print("Authenticity: sender/creator PRIVATE key signs; sender/creator PUBLIC key verifies.")
+
+
+# ============================================================
+# GENERAL IMPLEMENTATION ORDER
+# ============================================================
+
+def build_general_flow(algorithms, f):
     steps = []
 
-    if intents["file_input"]:
-        steps.append("Read/create the plaintext input or file.")
+    if f["file_input"]:
+        steps.append("Create/read the required input file and load its contents into a variable.")
+
+    if f["preprocess_upper_alpha"]:
+        steps.append("Preprocess plaintext exactly as asked (uppercase + alphabetic characters only).")
+
+    if f["dh_shared"]:
+        steps.append("Perform Diffie-Hellman: generate public values and independently compute both shared secrets.")
+
+    if f["compare_shared"]:
+        steps.append("Compare Sender and Receiver shared secrets; stop if they differ.")
+
+    if f["k_mod_validation"]:
+        steps.append("Validate K mod 26 == k2 before requesting/using k1.")
+
+    if f["gcd_validation"]:
+        steps.append("Validate gcd(k1, 26) == 1; invalid k1 must not be used.")
+
+    if f["mod_inverse"]:
+        steps.append("Compute modular inverse only after k1 validation succeeds.")
 
     if "AES" in algorithms:
-        if "IV required" in modes or "CBC mode" in modes:
-            steps.append("Obtain/generate AES key and IV.")
+        steps.append("Generate/obtain AES key (+ IV for CBC) and AES-encrypt the actual data/file.")
+
+    if "DES" in algorithms and "AES" not in algorithms:
+        steps.append("Generate/obtain DES key (+ IV for CBC) and DES-encrypt the data.")
+
+    if "RSA" in algorithms and f["encrypt"] and not f["encrypt_key"] and "AES" not in algorithms:
+        steps.append("Generate RSA key pair and encrypt plaintext with the required RSA public key.")
+
+    if f["encrypt_key"] and "RSA" in algorithms:
+        steps.append("RSA-encrypt the AES/DES key using the RECEIVER's public key.")
+
+    if "Affine" in algorithms and f["encrypt"]:
+        steps.append("Affine-encrypt processed plaintext using validated k1 and k2.")
+
+    if f["hash"]:
+        steps.append("Compute the required hash (usually of ciphertext when the question says integrity of encrypted data).")
+
+    if f["sign"]:
+        steps.append("Digitally sign the required data/hash using the SIGNER's private key.")
+
+    if f["timestamp"]:
+        steps.append("Generate timestamp_now().")
+
+    if f["store"]:
+        steps.append("Store all required values in one record dictionary; append to records[] if multiple records are needed.")
+
+    if f["file_output"]:
+        steps.append("Write encrypted/recovered values to the requested output files using the correct file mode.")
+
+    if f["verify_hash"]:
+        steps.append("Recompute hash from the received/stored data and compare with the stored hash.")
+
+    if f["verify_signature"]:
+        steps.append("Verify signature using the SIGNER's public key.")
+
+    if f["tamper"]:
+        steps.append("Modify one ciphertext byte/bit, recompute checks, and show verification failure.")
+
+    if f["decrypt"]:
+        if "Affine" in algorithms:
+            steps.append("Receiver decrypts the CIPHERTEXT with affine_decrypt(ciphertext, k1, k2) after validations pass.")
+        elif f["verify_hash"] or f["verify_signature"]:
+            steps.append("Decrypt/display plaintext ONLY after all required verification checks pass.")
         else:
-            steps.append("Obtain/generate AES key.")
+            steps.append("Decrypt using the matching key/IV or private key as required.")
 
-        steps.append("Encrypt the actual plaintext/file using AES.")
+    if f["performance"]:
+        steps.append("Measure required operations with time.perf_counter() and print/compare timings.")
 
-    elif "DES" in algorithms:
-        if "IV required" in modes or "CBC mode" in modes:
-            steps.append("Obtain/generate DES key and IV.")
-        else:
-            steps.append("Obtain/generate DES key.")
+    if f["collision"]:
+        steps.append("Store seen hash values and report whether any two different inputs produced the same hash.")
 
-        steps.append("Encrypt the actual plaintext using DES.")
-
-    elif "RSA" in algorithms and intents["encrypt_plaintext"]:
-        steps.append("Generate/load RSA public-private key pair.")
-        steps.append("Encrypt the plaintext using the RSA public key.")
-
-    if intents["encrypt_key"] and "RSA" in algorithms:
-        steps.append("Encrypt/wrap the symmetric AES/DES key using the RSA public key.")
-
-    if intents["authorization_code"] and "ElGamal" in algorithms:
-        steps.append("Encrypt the authorization/access code using ElGamal.")
-
-    if intents["hash_data"]:
-        steps.append("Compute hash of the ENCRYPTED data/ciphertext.")
-
-    if intents["sign"]:
-        if "RSA" in algorithms:
-            steps.append("Digitally sign the hash using the RSA private key.")
-        elif "ElGamal" in algorithms:
-            steps.append("Digitally sign the hash using the ElGamal private key.")
-        else:
-            steps.append("Digitally sign the hash using the specified private key.")
-
-    if intents["timestamp"]:
-        steps.append("Generate and store a timestamp.")
-
-    if intents["file_storage"]:
-        steps.append("Store ciphertext plus required metadata (hash/signature/IV/timestamp/etc.).")
-
-    if intents["verify_hash"]:
-        steps.append("Receiver/auditor recomputes the hash and compares it with the stored hash.")
-
-    if intents["verify_signature"]:
-        steps.append("Verify the signature using the sender's PUBLIC key.")
-
-    if intents["tamper_test"]:
-        steps.append("Tamper with one ciphertext byte/character and recompute the hash to show integrity failure.")
-
-    if intents["decrypt_plaintext"]:
-        steps.append("Only after required checks pass, decrypt using the correct key/IV.")
-
-    if intents["audit_report"]:
-        steps.append("Record verification result and generate the requested audit/compliance report.")
+    if f["client_server"]:
+        steps.append("Split logic into sender/client and receiver/server: send required bytes and verify/decrypt on the other side.")
 
     return steps
 
 
 # ============================================================
-# EXAM RULES / COMMON CRYPTO LOGIC
+# GLUE CODE - THE PART THAT USUALLY FEELS OVERWHELMING
 # ============================================================
 
-def print_crypto_rules(algorithms, modes, intents):
-    title("IMPORTANT EXAM RULES")
+def print_glue_help(roles, algorithms, f, values):
+    title("GLUE CODE CHEAT SHEET")
 
-    print("1. Public-key encryption:")
-    print("   public key  -> encrypt")
-    print("   private key -> decrypt")
+    printed = False
 
-    print("\n2. Digital signature:")
-    print("   private key -> sign")
-    print("   public key  -> verify")
+    # Dictionaries and records
+    if f["store"] or f["multiple_records"] or f["rbac"]:
+        printed = True
+        print("\n[A] ONE RECORD = ONE DICTIONARY")
+        print('record = {')
+        print('    "id": len(records) + 1,')
+        if f["encrypt"]:
+            print('    "encrypted": encrypted,')
+        if "AES" in algorithms:
+            print('    "iv": iv,')
+        if f["encrypt_key"]:
+            print('    "encrypted_key": encrypted_key,')
+        if f["hash"]:
+            print('    "hash": stored_hash,')
+        if f["sign"]:
+            print('    "signature": signature,')
+        if f["timestamp"]:
+            print('    "timestamp": timestamp_now(),')
+        print('}')
 
-    if intents["hash_data"]:
-        print("\n3. If the question says integrity of encrypted data:")
-        print("   hash the CIPHERTEXT, not the plaintext.")
+        print("\n[B] MANY RECORDS = LIST")
+        print("records = []")
+        print("records.append(record)")
+        print("for record in records:")
+        print('    print(record["id"])')
 
-    if "CBC mode" in modes:
-        print("\n4. CBC mode requires an IV.")
+    # Menu / RBAC
+    if f["rbac"] or f["menu"] or len(roles) >= 3:
+        printed = True
+        menu_roles = roles[:6] if roles else ["Role1", "Role2", "Role3"]
+        print("\n[C] EASY RBAC / MENU")
+        print("while True:")
+        for i, role in enumerate(menu_roles, 1):
+            print(f'    print("{i}. {role}")')
+        print('    print("0. Exit")')
+        print('    role = input("Choose role: ")')
+        for i, role in enumerate(menu_roles, 1):
+            word = "if" if i == 1 else "elif"
+            print(f'    {word} role == "{i}":')
+            print(f'        # {role} operations only')
+            print('        pass')
+        print('    elif role == "0":')
+        print('        break')
 
-    if "DES" in algorithms and "CBC mode" in modes:
-        print("   DES block size = 8 bytes.")
+    # File modes
+    if f["file_input"] or f["file_output"]:
+        printed = True
+        print("\n[D] FILE HANDLING")
+        print('# Create normal text file')
+        print('with open("input.txt", "w") as file:')
+        print('    file.write("sample data")')
+        print()
+        print('# Read file as bytes for crypto')
+        print('with open("input.txt", "rb") as file:')
+        print('    data = file.read()')
+        print()
+        print('# Store encrypted bytes')
+        print('with open("encrypted.bin", "wb") as file:')
+        print('    file.write(encrypted)')
+        print()
+        print('# Read encrypted bytes back')
+        print('with open("encrypted.bin", "rb") as file:')
+        print('    encrypted = file.read()')
+        print()
+        print('# Write recovered plaintext bytes')
+        print('with open("recovered.txt", "wb") as file:')
+        print('    file.write(decrypted)')
+        print()
+        print('REMEMBER: w=text write, rb=read bytes, wb=write bytes')
+
+    # Patient/student/etc. multiple fields
+    if f["rbac"] or f["multiple_records"]:
+        printed = True
+        print("\n[E] MULTIPLE INPUT FIELDS")
+        print('data_obj = {')
+        print('    "name": input("Enter name: "),')
+        print('    "details": input("Enter details: ")')
+        print('}')
+        print('data_text = str(data_obj)  # encrypt this string')
+
+    # Tampering
+    if f["tamper"]:
+        printed = True
+        print("\n[F] TAMPERING")
+        print("tampered = bytearray(encrypted)")
+        print("tampered[0] ^= 1")
+        print("tampered = bytes(tampered)")
+
+    # Performance
+    if f["performance"]:
+        printed = True
+        print("\n[G] TIMING")
+        print("start = time.perf_counter()")
+        print("# operation here")
+        print("elapsed = time.perf_counter() - start")
+        print('print("Time:", elapsed)')
+
+    # FieldTrack/DH-Affine validation snippet
+    if "Diffie-Hellman" in algorithms and "Affine" in algorithms:
+        printed = True
+        k2 = values.get("k2") if values.get("k2") is not None else 2
+        print("\n[H] DH + AFFINE VALIDATION SKELETON")
+        print("sender_public, sender_private = dh_generate_public(p, g, sender_private)")
+        print("receiver_public, receiver_private = dh_generate_public(p, g, receiver_private)")
+        print("sender_secret = dh_shared_secret(receiver_public, sender_private, p)")
+        print("receiver_secret = dh_shared_secret(sender_public, receiver_private, p)")
+        print()
+        print("if sender_secret != receiver_secret:")
+        print('    print("Shared secrets do not match")')
+        print("else:")
+        print(f"    k2 = {k2}")
+        print("    if sender_secret % 26 != k2:")
+        print('        print("K mod 26 validation failed")')
+        print("    else:")
+        print('        k1 = int(input("Enter k1: "))')
+        print("        if math.gcd(k1, 26) != 1:")
+        print('            print("Invalid k1")')
+        print("        else:")
+        print("            k1_inv = pow(k1, -1, 26)")
+        print("            encrypted = affine_encrypt(plaintext, k1, k2)")
+        print("            # Receiver uses SAME k1 and decrypts encrypted, not plaintext")
+        print("            if receiver_secret % 26 == k2:")
+        print("                decrypted = affine_decrypt(encrypted, k1, k2)")
+
+    if not printed:
+        print("No special glue structure detected. Focus on the algorithm-specific functions above.")
+
+
+# ============================================================
+# EXAM MEMORY RULES
+# ============================================================
+
+def print_rules(algorithms, f):
+    title("5-SECOND EXAM RULES")
+
+    print("PUBLIC key  -> encrypt")
+    print("PRIVATE key -> decrypt")
+    print("PRIVATE key -> sign")
+    print("PUBLIC key  -> verify signature")
+
+    if f["hash"]:
+        print("Hash = integrity: store old hash, recompute later, compare.")
 
     if "AES" in algorithms:
-        print("\n5. AES key sizes are 16/24/32 bytes for AES-128/192/256.")
+        print("AES-128 = 16-byte key. CBC also needs a 16-byte IV.")
 
-    if intents["verify_hash"] and intents["decrypt_plaintext"]:
-        print("\n6. If question says verify before access:")
-        print("   DO NOT decrypt until integrity/authenticity checks succeed.")
+    if f["encrypt_key"]:
+        print("Large file/data -> AES. RSA protects the small AES key.")
 
-    if intents["tamper_test"]:
-        print("\n7. Tampering demo:")
-        print("   keep original hash -> modify ciphertext -> recompute hash -> mismatch -> stop decryption.")
+    if f["verify_hash"] or f["verify_signature"]:
+        print("If question says verify before access: DO NOT decrypt until checks pass.")
+
+    if "Diffie-Hellman" in algorithms:
+        print("Diffie-Hellman establishes a shared secret; it does not itself encrypt the message.")
+
+    if "Affine" in algorithms:
+        print("Affine: k1 must be coprime with 26; k2 is the additive part.")
+
+    if f["file_input"] or f["file_output"]:
+        print("Crypto works on DATA read from a file, not on the filename itself.")
+
+    if f["rbac"]:
+        print("Easy RBAC for lab: separate role blocks; do not put forbidden operations in that role's block.")
 
 
 # ============================================================
@@ -544,133 +674,113 @@ def print_crypto_rules(algorithms, modes, intents):
 
 def analyze_question(question):
     algorithms = detect_algorithms(question)
-    modes = detect_modes(question)
-    intents = detect_intents(question)
-    roles = extract_role_sections(question)
+    roles = detect_roles(question)
+    values = extract_values(question)
+    f = detect_features(question, algorithms)
 
-    title("QUESTION ANALYSIS")
+    title("1. QUESTION DECOMPOSITION")
 
-    print("Detected algorithms:")
+    print("Algorithms detected:")
     if algorithms:
         for a in algorithms:
             print("  -", a)
     else:
-        print("  - No algorithm name detected. Read the question manually.")
+        print("  - No named algorithm detected. Read algorithm names manually.")
 
-    print("\nDetected crypto details:")
-    if modes:
-        for d in modes:
-            print("  -", d)
-    else:
-        print("  - None explicitly detected")
-
-    title("DETECTED REQUIREMENTS")
-
-    labels = {
-        "encrypt_plaintext": "Encrypt plaintext/file",
-        "decrypt_plaintext": "Decrypt/recover plaintext",
-        "hash_data": "Hash / integrity checking",
-        "sign": "Create digital signature",
-        "verify_signature": "Verify authenticity/signature",
-        "verify_hash": "Recompute/compare hash",
-        "encrypt_key": "Encrypt/wrap symmetric key",
-        "authorization_code": "Protect authorization code",
-        "file_input": "Read/create files",
-        "file_storage": "Store encrypted record/metadata",
-        "timestamp": "Timestamp",
-        "rbac": "Role-Based Access Control",
-        "menu": "Menu-driven program",
-        "tamper_test": "Tampering / integrity-failure demo",
-        "audit_report": "Audit/compliance report",
-    }
-
-    for key, label in labels.items():
-        if intents.get(key):
-            print("  [YES]", label)
-
+    print("\nActors / roles detected:")
     if roles:
-        title("ROLE ANALYSIS")
+        for r in roles:
+            print("  -", r)
+    else:
+        print("  - No clear role names detected")
 
-        for role, text in roles.items():
-            abilities, restrictions = analyze_role(text)
+    print("\nImportant requirements detected:")
+    labels = [
+        ("encrypt", "Encryption"),
+        ("decrypt", "Decryption"),
+        ("hash", "Hash / integrity"),
+        ("verify_hash", "Recompute / compare hash"),
+        ("sign", "Digital signature"),
+        ("verify_signature", "Signature verification"),
+        ("file_input", "Read/create file"),
+        ("file_output", "Write/store file"),
+        ("encrypt_key", "Encrypt/wrap AES/DES key"),
+        ("timestamp", "Timestamp"),
+        ("store", "Store record/data"),
+        ("multiple_records", "Multiple records / record IDs"),
+        ("rbac", "RBAC / role restrictions"),
+        ("menu", "Menu-driven system"),
+        ("tamper", "Tampering test"),
+        ("performance", "Timing / performance"),
+        ("collision", "Collision detection"),
+        ("client_server", "Client-server / socket"),
+        ("preprocess_upper_alpha", "Uppercase + A-Z-only preprocessing"),
+        ("dh_shared", "Diffie-Hellman shared secret"),
+        ("compare_shared", "Compare both DH shared secrets"),
+        ("k_mod_validation", "K mod 26 == k2 validation"),
+        ("gcd_validation", "gcd(k1,26) == 1 validation"),
+        ("mod_inverse", "Modular inverse of k1"),
+    ]
 
-            print(f"\n{role}")
-            print("-" * len(role))
+    any_feature = False
+    for key, label in labels:
+        if f.get(key):
+            any_feature = True
+            print("  [YES]", label)
+    if not any_feature:
+        print("  - No common pattern confidently detected")
 
-            if abilities:
-                print("Can:")
-                for x in abilities:
-                    print("  -", x)
+    detected_values = {k: v for k, v in values.items() if v not in (None, [], "")}
+    if detected_values:
+        print("\nValues/files detected:")
+        for k, v in detected_values.items():
+            print(f"  - {k}: {v}")
 
-            if restrictions:
-                print("Restrictions:")
-                for x in restrictions:
-                    print("  -", x)
+    # Specialized plan for FieldTrack-like questions
+    if "Diffie-Hellman" in algorithms and "Affine" in algorithms:
+        print_fieldtrack_plan(values)
 
-    title("LIKELY IMPLEMENTATION FLOW")
+    print_hybrid_plan(algorithms, f)
 
-    flow = build_flow(algorithms, intents, modes)
-
+    title("2. IMPLEMENTATION ORDER")
+    flow = build_general_flow(algorithms, f)
     if flow:
         for i, step in enumerate(flow, 1):
             print(f"{i}. {step}")
     else:
-        print("Could not infer enough steps automatically.")
+        print("Could not confidently build a flow. Use algorithm names + question order manually.")
 
-    title("FUNCTIONS YOU SHOULD LOOK FOR IN YOUR MASTER FILE")
-
-    funcs = suggest_functions(algorithms, intents, modes)
-
+    title("3. FUNCTIONS TO COPY FROM YOUR MASTER TOOLKIT")
+    funcs = toolkit_functions(algorithms, f)
     if funcs:
-        for f in funcs:
-            print("  -", f)
+        for fn in funcs:
+            print("  -", fn)
     else:
-        print("  - No function suggestions detected.")
+        print("  - No matching toolkit function detected")
 
-    title("WHAT DATA SHOULD PROBABLY BE STORED")
+    print_glue_help(roles, algorithms, f, values)
+    print_rules(algorithms, f)
 
-    store_items = []
-
-    if intents["encrypt_plaintext"]:
-        store_items.append("ciphertext")
-
-    if "IV required" in modes or "CBC mode" in modes:
-        store_items.append("IV")
-
-    if intents["hash_data"]:
-        store_items.append("hash")
-
-    if intents["sign"]:
-        store_items.append("digital signature")
-
-    if intents["timestamp"]:
-        store_items.append("timestamp")
-
-    if intents["encrypt_key"]:
-        store_items.append("encrypted AES/DES key")
-
-    if intents["authorization_code"]:
-        store_items.append("encrypted authorization code")
-
-    if store_items:
-        for x in store_items:
-            print("  -", x)
-    else:
-        print("  - Read the question for required metadata.")
-
-    print_crypto_rules(algorithms, modes, intents)
+    title("FINAL EXAM CHECK")
+    print("Before coding, answer these 7 questions:")
+    print("1. Who are the actors/roles?")
+    print("2. What is the plaintext/data/file?")
+    print("3. Which algorithm does what?")
+    print("4. Which conditions must pass BEFORE continuing?")
+    print("5. What must be stored?")
+    print("6. Who is allowed to decrypt / verify / only view?")
+    print("7. What exact variable is passed to the next function?")
 
 
 # ============================================================
-# MAIN
+# INPUT LOOP
 # ============================================================
 
 def main():
-    print("=" * 72)
-    print("IS LAB EXAM HELPER v2 - GENERIC QUESTION ANALYZER")
-    print("=" * 72)
-    print("Paste ANY similar IS lab question.")
-    print("Exact wording/scenario name does NOT need to match.")
+    print("=" * 78)
+    print("IS LAB EXAM HELPER v3 - UNIVERSAL SCENARIO DECOMPOSER")
+    print("=" * 78)
+    print("Paste the complete question.")
     print("Type END on a new line when finished.\n")
 
     lines = []
