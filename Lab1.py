@@ -1779,3 +1779,128 @@ with open("encrypted_record.bin", "rb") as file:
     encrypted = file.read()
 iv = encrypted[:16]
 encryp = encrypted[::16]
+
+plaintext = input("enter plaintext: ")
+plaintext = "".join(
+    ch for ch in plaintext.upper()
+    if ch.isalpha()
+)
+
+import pickle
+record = {
+    "ciphertext": encrypted,
+    "iv": iv,
+    "hash": hash256,
+    "signature": signature,
+    "timestamp": timestamp_now()
+}
+
+records.append(record)
+
+# Save the WHOLE records list into file.
+with open("records.dat", "wb") as file:
+    pickle.dump(records, file)
+
+if role == "2":
+
+    with open("records.dat", "rb") as file:
+        stored_records = pickle.load(file)
+
+    for record in stored_records:
+
+        print("Ciphertext:", record["ciphertext"])
+        print("IV:", record["iv"])
+        print("Stored Hash:", record["hash"])
+        print("Signature:", record["signature"])
+        print("Timestamp:", record["timestamp"])
+
+        # Recalculate SHA-256 on ciphertext.
+        new_hash = sha256_hex(record["ciphertext"])
+
+        integrity = new_hash == record["hash"]
+
+        print("Integrity:", integrity)
+
+'''
+.decode()  = bytes → normal readable text
+
+.hex()     = bytes → printable hexadecimal representation
+
+So after decryption:
+
+decrypted = aes_cbc_decrypt(...)
+
+decrypted is bytes like:
+
+b'Patient has fever'
+
+To display the actual text:
+
+print(decrypted.decode())
+
+Output:
+
+Patient has fever
+
+Use .decode() when the bytes are supposed to represent original text.
+
+For encrypted data, keys, IVs, signatures, you normally cannot decode them as text, because they are random binary bytes.
+
+Instead, if you want to display them nicely:
+
+print(encrypted.hex())
+print(aes_key.hex())
+print(iv.hex())
+
+For example:
+
+aes_key = get_random_bytes(16)
+
+print(aes_key)
+
+might show:
+
+b'\xa4\x92...'
+
+but:
+
+print(aes_key.hex())
+
+shows something cleaner like:
+
+a4927bc88f21...
+
+So for your exam:
+
+Decrypted plaintext bytes
+→ .decode()
+
+Ciphertext
+AES key
+IV
+RSA encrypted key
+signature
+→ .hex() if you want to DISPLAY them
+
+And one more useful reverse operation:
+
+bytes.fromhex(...)
+
+does the opposite of .hex():
+
+bytes → .hex() → hex string
+hex string → bytes.fromhex() → bytes
+
+Example:
+
+key_hex = input("Enter AES key in hex: ")
+
+aes_key = bytes.fromhex(key_hex)
+
+So your tiny cheat-sheet can be:
+
+.decode()       bytes → readable text
+.hex()          bytes → readable hex
+bytes.fromhex() hex → bytes
+.encode()       text → bytes
+'''
