@@ -1,0 +1,11 @@
+Confidentiality
+→ encrypt the data
+
+Integrity
+→ compute SHA-256
+→ later recompute SHA-256
+→ compare hashes
+
+Authenticity
+→ sign using private key
+→ verify using public key
